@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>资产多重策略监控订阅系统 (V3.4)</title>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .animate-fade {
+            animation: fadeIn 0.3s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800 min-h-screen p-4 flex flex-col items-center justify-start">
+
+    <div class="bg-white p-6 md:p-8 rounded-xl shadow-lg max-w-3xl w-full my-4">
+        <h1 class="text-2xl font-bold mb-2 text-center text-yellow-600">✨ 金价资产监控配置中心</h1>
+        <p class="text-xs text-gray-400 text-center mb-6">版本 V3.4：增强通道与Webhook地址前缀的实时联动交叉校验</p>
+        
+        <form id="subForm" class="space-y-6">
+            <div class="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+                    <div>
+                        <label class="block text-sm font-medium mb-1 text-gray-700">推送通道</label>
+                        <select id="push_type" onchange="resetQueryStatus()" class="w-full border rounded p-2 focus:ring-2 focus:ring-yellow-400 outline-none bg-white text-sm">
+                            <option value="server_chan">Server酱 (SCU/SCT 密钥)</option>
+                            <option value="dingtalk">钉钉群机器人 (Webhook/Token)</option>
+                            <option value="feishu">飞书群机器人 (Webhook/Token)</option>
+                        </select>
+                    </div>
+                    <div class="md:col-span-1">
+                        <label class="block text-sm font-medium mb-1 text-gray-700">接收凭证 (Token 或 完整URL)</label>
+                        <input type="text" id="token" required oninput="resetQueryStatus()" placeholder="请输入 Token 或 Webhook 地址" 
+                               class="w-full border rounded p-2 focus:ring-2 focus:ring-yellow-400 outline-none bg-white text-sm">
+                    </div>
+                    <div>
+                        <button type="button" onclick="querySubscription(false)" id="queryBtn" class="w-full bg-blue-600 text-white py-2 rounded font-medium hover:bg-blue-700 transition shadow text-sm">
+                            🔍 1. 查询并解锁配置
+                        </button>
+                    </div>
+                </div>
+                <div id="queryStatusTip" class="text-xs text-red-500 mt-2 font-medium">⚠️ 提示：检测到通道变更，请先点击上方按钮进行“查询”以回显并解锁工作区。</div>
+            </div>
+
+            <div id="workArea" class="opacity-40 pointer-events-none transition-all duration-300">
+                <div class="flex justify-between items-center mb-3">
+                    <h2 class="text-base font-bold text-gray-700">🔔 2. 配置通知时机触发策略</h2>
+                    <button type="button" id="addRuleBtn" onclick="addRuleRow()" class="bg-green-600 text-white px-3 py-1.5 rounded text-xs font-medium hover:bg-green-700 transition">
+                        ➕ 添加新规则
+                    </button>
+                </div>
+                
+                <div id="rulesContainer" class="space-y-4"></div>
+            </div>
+
+            <div class="pt-4 border-t border-gray-200">
+                <button type="submit" id="submitBtn" disabled class="w-full bg-gray-400 text-white py-3 rounded-lg font-medium cursor-not-allowed shadow transition text-sm">
+                    请先完成凭证格式查询以解锁保存
+                </button>
+            </div>
+        </form>
+
+        <div class="mt-8 pt-6 border-t border-dashed border-gray-200 bg-gray-50/50 p-4 rounded-lg text-xs text-gray-400 space-y-1.5">
+            <p class="font-semibold text-gray-500 text-center mb-1 text-sm">⚖️ 平台特别免责及风险提示声明</p>
+            <p>1. <strong>非投资建议</strong>：本系统发送的所有黄金盘面价格、实时涨跌变动信息均源自第三方公开API清洗换算，仅供技术研究与资产监控交流参考，在任何情况下均<strong>不构成任何形式的投资建议或买卖依据</strong>。据此操作风险自担。</p>
+            <p>2. <strong>消息延迟与漏报风险</strong>：鉴于国内外网络中转复杂性、上游网关限流、第三方推送服务波动等不可抗力因素，系统<strong>可能存在极端情况下的消息推送延迟、失败或漏报</strong>。用户不可完全依赖、强绑定本通知作为唯一的决策依据。</p>
+            <p>3. <strong>自负盈亏原则</strong>：市场有风险，入市需谨慎。黄金盘面瞬息万变，因延迟、系统故障、断网等导致的任何潜在交易错失、直接或间接财产损益，本系统及开发者<strong>均不承担任何民事赔偿或法律连带责任</strong>。</p>
+        </div>
+    </div>
+
+    <script>
+        // 自动对齐服务端口（改成外网接口地址）
+        const API_BASE = "http://localhost:5001"; 
+        let ruleCounter = 0;
+        let hasQueried = false; 
+
+        // 核心：全通道联动交叉校验器
+        function verifyTokenAndChannel(pushType, tokenStr) {
+            const token = tokenStr.trim();
+            if (!token) return { valid: false, msg: "凭证内容不能为空" };
+
+            // 1. Server酱通道校验
+            if (pushType === 'server_chan') {
+                if (token.startsWith('http://') || token.startsWith('https://')) {
+                    return { valid: false, msg: "❌ 格式错误：Server酱凭证通常为 SCT/SCU 开头的密钥短串，不能输入 http(s) 开头的 Webhook 网址。" };
+                }
+                const regex = /^(SCU|sctp|SCT)\d+[A-Za-z0-9]+$/i;
+                if (!regex.test(token)) {
+                    return { valid: false, msg: "❌ 格式错误：您输入的 Server 酱密钥格式不合法（必须以 SCU 或 SCT 开头且无特殊字符）。" };
+                }
+            }
+
+            // 2. 钉钉群机器人校验
+            if (pushType === 'dingtalk') {
+                if (token.startsWith('http://') || token.startsWith('https://')) {
+                    if (!token.includes('oapi.dingtalk.com')) {
+                        return { valid: false, msg: "❌ 联动校验失败：当前选择的是【钉钉机器人】，但输入的 Webhook 地址域名不是钉钉官方地址（oapi.dingtalk.com）。" };
+                    }
+                }
+            }
+
+            // 3. 飞书群机器人校验
+            if (pushType === 'feishu') {
+                if (token.startsWith('http://') || token.startsWith('https://')) {
+                    if (!token.includes('open.feishu.cn')) {
+                        return { valid: false, msg: "❌ 联动校验失败：当前选择的是【飞书机器人】，但输入的 Webhook 地址域名不是飞书官方地址（open.feishu.cn）。" };
+                    }
+                }
+            }
+
+            return { valid: true, msg: "校验通过" };
+        }
+
+        // 当用户修改输入框或更换下拉菜单时，立刻锁定工作区并重置状态
+        function resetQueryStatus() {
+            hasQueried = false;
+            document.getElementById('workArea').classList.add('opacity-40', 'pointer-events-none');
+            
+            const submitBtn = document.getElementById('submitBtn');
+            submitBtn.disabled = true;
+            submitBtn.className = "w-full bg-gray-400 text-white py-3 rounded-lg font-medium cursor-not-allowed shadow text-sm";
+            submitBtn.innerText = "请先查询凭证以解锁保存功能";
+            document.getElementById('rulesContainer').innerHTML = "";
+
+            // 实时给予弱校验视觉提示
+            const push_type = document.getElementById('push_type').value;
+            const token = document.getElementById('token').value;
+            const tip = document.getElementById('queryStatusTip');
+
+            if (token.trim()) {
+                const check = verifyTokenAndChannel(push_type, token);
+                if (!check.valid) {
+                    tip.className = "text-xs text-red-600 bg-red-50 p-2 rounded mt-2 border border-red-200 font-medium";
+                    tip.innerText = check.msg;
+                    return;
+                }
+            }
+            
+            tip.className = "text-xs text-red-500 mt-2 font-medium";
+            tip.innerText = "⚠️ 提示：检测到凭证或通道变更，请先点击上方按钮进行“查询验证”以解锁配置区。";
+        }
+
+        // 发起后端查询
+        function querySubscription(isAfterSave = false) {
+            const push_type = document.getElementById('push_type').value;
+            let token = document.getElementById('token').value;
+            token = token ? token.trim() : "";
+
+            // 强联动校验拦截
+            const checkResult = verifyTokenAndChannel(push_type, token);
+            if (!checkResult.valid) {
+                alert(checkResult.msg);
+                return;
+            }
+
+            const queryBtn = document.getElementById('queryBtn');
+            queryBtn.innerText = "正在查询...";
+            queryBtn.disabled = true;
+
+            axios.post(`${API_BASE}/api/query_rules`, { push_type: push_type, token: token })
+                .then(res => {
+                    hasQueried = true;
+                    document.getElementById('workArea').classList.remove('opacity-40', 'pointer-events-none');
+                    
+                    const submitBtn = document.getElementById('submitBtn');
+                    submitBtn.disabled = false;
+                    submitBtn.className = "w-full bg-yellow-600 text-white py-3 rounded-lg font-medium hover:bg-yellow-700 transition shadow cursor-pointer text-sm";
+                    submitBtn.innerText = "接受并遵守下方声明，保存当前全部配置";
+
+                    const tip = document.getElementById('queryStatusTip');
+                    tip.className = "text-xs text-green-600 bg-green-50 p-2 rounded mt-2 border border-green-200 font-medium";
+
+                    document.getElementById('rulesContainer').innerHTML = "";
+                    
+                    const existingRules = res.data.rules || [];
+                    if(existingRules.length === 0) {
+                        if (isAfterSave) {
+                            tip.innerText = "✨ 提示：您已成功清空该账户下的所有通知规则，目前处于完全闭锁免打扰状态。";
+                        } else {
+                            tip.innerText = "💡 查询结果：该凭证有效且未配置规则。已为您默认生成新规则配置行。";
+                            addRuleRow(); 
+                        }
+                    } else {
+                        tip.innerText = `✅ 查询成功：该通道当前已配置 ${existingRules.length} 条监控策略，已完整回显。`;
+                        existingRules.forEach(rule => {
+                            addRuleRow(rule);
+                        });
+                    }
+                })
+                .catch(err => {
+                    alert("查询失败： " + (err.response?.data?.msg || "请检查后台 app.py 是否正常启动"));
+                })
+                .finally(() => {
+                    queryBtn.innerText = "🔍 1. 查询已有配置";
+                    queryBtn.disabled = false;
+                });
+        }
+
+        function addRuleRow(ruleData = null) {
+            ruleCounter++;
+            const container = document.getElementById('rulesContainer');
+            
+            const row = document.createElement('div');
+            row.id = `rule_row_${ruleCounter}`;
+            row.className = "rule-row bg-yellow-50/40 p-4 rounded-lg border border-yellow-100 relative space-y-3 animate-fade";
+            
+            const defaultMode = ruleData ? ruleData.trigger_mode : 1;
+            const defaultTime = ruleData ? (ruleData.cron_time || "10:00") : "10:00";
+            const defaultCondition = ruleData ? (ruleData.price_condition || "below") : "below";
+            const defaultPriceValue = ruleData ? ruleData.price_value : "";
+            const defaultWeeks = ruleData && ruleData.cron_weeks ? ruleData.cron_weeks : [1,2,3,4,5];
+
+            row.innerHTML = `
+                <div class="flex flex-wrap items-center justify-between gap-4">
+                    <div class="flex items-center space-x-2">
+                        <span class="text-xs font-bold text-yellow-700">策略规则</span>
+                        <select class="trigger-mode border rounded p-1 bg-white text-xs" onchange="handleModeChange(${ruleCounter}, this.value)">
+                            <option value="1" ${defaultMode === 1 ? 'selected' : ''}>1. 固定时间点通知</option>
+                            <option value="2" ${defaultMode === 2 ? 'selected' : ''}>2. 达到固定价触发</option>
+                            <option value="3" ${defaultMode === 3 ? 'selected' : ''}>3. 相比09:20变动异常触发</option>
+                        </select>
+                    </div>
+                    <button type="button" onclick="removeRuleRow(${ruleCounter})" class="text-red-500 hover:text-red-700 text-xs font-medium">
+                        ❌ 移除此条
+                    </button>
+                </div>
+
+                <div id="mode_1_fields_${ruleCounter}" class="mode-fields ${defaultMode === 1 ? '' : 'hidden'} space-y-2">
+                    <div class="grid grid-cols-7 gap-1 text-[11px] text-center">
+                        <label class="border p-1 rounded bg-white block"><input type="checkbox" class="week-chk" value="1" ${defaultWeeks.includes(1)?'checked':''}><br>一</label>
+                        <label class="border p-1 rounded bg-white block"><input type="checkbox" class="week-chk" value="2" ${defaultWeeks.includes(2)?'checked':''}><br>二</label>
+                        <label class="border p-1 rounded bg-white block"><input type="checkbox" class="week-chk" value="3" ${defaultWeeks.includes(3)?'checked':''}><br>三</label>
+                        <label class="border p-1 rounded bg-white block"><input type="checkbox" class="week-chk" value="4" ${defaultWeeks.includes(4)?'checked':''}><br>四</label>
+                        <label class="border p-1 rounded bg-white block"><input type="checkbox" class="week-chk" value="5" ${defaultWeeks.includes(5)?'checked':''}><br>五</label>
+                        <label class="border p-1 rounded bg-white block"><input type="checkbox" class="week-chk" value="6" ${defaultWeeks.includes(6)?'checked':''}><br>六</label>
+                        <label class="border p-1 rounded bg-white block"><input type="checkbox" class="week-chk" value="7" ${defaultWeeks.includes(7)?'checked':''}><br>日</label>
+                    </div>
+                    <div class="flex items-center space-x-2 text-xs">
+                        <span>推送时间：</span>
+                        <input type="time" value="${defaultTime}" class="cron-time border rounded p-1 bg-white">
+                    </div>
+                </div>
+
+                <div id="mode_2_fields_${ruleCounter}" class="mode-fields ${defaultMode === 2 ? '' : 'hidden'} flex items-center space-x-2 text-xs">
+                    <select class="price-condition border rounded p-1 bg-white">
+                        <option value="below" ${defaultCondition === 'below'?'selected':''}>低于或等于</option>
+                        <option value="above" ${defaultCondition === 'above'?'selected':''}>高于或等于</option>
+                    </select>
+                    <input type="number" step="0.01" value="${defaultPriceValue}" placeholder="输入金价" class="price-value border rounded p-1 w-28 bg-white">
+                    <span class="text-gray-500">元/克</span>
+                </div>
+
+                <div id="mode_3_fields_${ruleCounter}" class="mode-fields ${defaultMode === 3 ? '' : 'hidden'} flex items-center space-x-2 text-xs">
+                    <span class="text-gray-600">日内暴涨或暴跌绝对值超过</span>
+                    <input type="number" step="0.01" value="${defaultPriceValue}" placeholder="输入阈值" class="price-value border rounded p-1 w-24 bg-white">
+                    <span class="text-gray-600">元</span>
+                </div>
+            `;
+            container.appendChild(row);
+        }
+
+        function removeRuleRow(id) {
+            const row = document.getElementById(`rule_row_${id}`);
+            if (row) row.remove();
+        }
+
+        function handleModeChange(id, mode) {
+            document.getElementById(`mode_1_fields_${id}`).classList.add('hidden');
+            document.getElementById(`mode_2_fields_${id}`).classList.add('hidden');
+            document.getElementById(`mode_3_fields_${id}`).classList.add('hidden');
+            document.getElementById(`mode_${mode}_fields_${id}`).classList.remove('hidden');
+        }
+
+        document.getElementById('subForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const push_type = document.getElementById('push_type').value;
+            let token = document.getElementById('token').value;
+            token = token ? token.trim() : "";
+
+            // 提交时进行二次兜底强校验
+            const finalCheck = verifyTokenAndChannel(push_type, token);
+            if (!finalCheck.valid || !hasQueried) {
+                alert("安全拦截：凭证格式有误或未通过合法性查询！\n原因：" + finalCheck.msg);
+                return;
+            }
+            
+            const rows = document.querySelectorAll('.rule-row');
+            if (rows.length === 0) {
+                if(!confirm('警告：您当前删除了所有规则，保存将彻底清空现有监控任务，确定要执行此退订操作吗？')) {
+                    return;
+                }
+            }
+
+            const btn = document.getElementById('submitBtn');
+            btn.disabled = true;
+            btn.innerText = "正在同步云端监控引擎...";
+
+            const rules = [];
+            rows.forEach(row => {
+                const id = row.id.replace('rule_row_', '');
+                const mode = row.querySelector('.trigger-mode').value;
+                
+                let cron_weeks = [];
+                let cron_time = null;
+                let price_condition = null;
+                let price_value = 0;
+
+                if (mode === "1") {
+                    row.querySelectorAll(`.week-chk:checked`).forEach(chk => cron_weeks.push(parseInt(chk.value)));
+                    cron_time = row.querySelector('.cron-time').value;
+                } else if (mode === "2") {
+                    price_condition = row.querySelector(`#mode_2_fields_${id} .price-condition`).value;
+                    price_value = row.querySelector(`#mode_2_fields_${id} .price-value`).value;
+                } else if (mode === "3") {
+                    price_value = row.querySelector(`#mode_3_fields_${id} .price-value`).value;
+                }
+
+                rules.push({
+                    trigger_mode: parseInt(mode),
+                    cron_weeks: cron_weeks,
+                    cron_time: cron_time,
+                    price_condition: price_condition,
+                    price_value: parseFloat(price_value || 0)
+                });
+            });
+
+            axios.post(`${API_BASE}/api/subscribe_batch`, { push_type: push_type, token: token, rules: rules })
+                .then(res => {
+                    alert('全量覆写保存成功！新监控任务已实时生效。');
+                    querySubscription(true); 
+                })
+                .catch(err => {
+                    alert('保存失败：' + (err.response?.data?.msg || '网络通信异常'));
+                })
+                .finally(() => {
+                    btn.disabled = false;
+                    btn.innerText = "接受并遵守下方声明，保存当前全部配置";
+                });
+        });
+    </script>
+</body>
+</html>
