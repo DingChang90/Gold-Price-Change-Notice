@@ -65,7 +65,55 @@
             </div>
         </form>
 
-        <div class="mt-8 pt-6 border-t border-dashed border-gray-200 bg-gray-50/50 p-4 rounded-lg text-xs text-gray-400 space-y-1.5">
+        <!-- 🔧 新增：消息推送凭证获取指南（折叠面板区域） -->
+        <div class="mt-8 pt-6 border-t border-dashed border-gray-200 bg-gray-50/50 p-4 rounded-lg text-xs text-gray-500 space-y-2">
+            <p class="font-semibold text-gray-700 text-center mb-2 text-sm">🛠️ 消息推送凭证（Token/Webhook）获取指南</p>
+            
+            <details class="group border border-gray-200 rounded bg-white p-2 cursor-pointer transition-all">
+                <summary class="font-medium text-gray-700 select-none flex justify-between items-center outline-none">
+                    <span>📬 1. 如何获取 Server酱 接收密钥？（微信接收）</span>
+                    <span class="text-gray-400 group-open:rotate-180 transition-transform">▼</span>
+                </summary>
+                <div class="mt-2 pl-2 border-l-2 border-yellow-400 text-gray-500 space-y-1 bg-gray-50/50 p-2 rounded">
+                    <p>① 访问 <a href="https://sct.ftqq.com/" target="_blank" class="text-blue-600 hover:underline">Server酱 官网</a> 并登录您的账号。</p>
+                    <p>② 进入 <strong>「信道配置」</strong>，选择您期望的接收方式（如微信服务号、企业微信等）并完成关注绑定。</p>
+                    <p>③ 进入 <strong>「SendKey」</strong> 页面，复制您的专属密钥（通常为 <code>SCT</code> 或 <code>SCU</code> 开头的英文字母与数字组合短串）。</p>
+                    <p>④ <strong>填写规范</strong>：请直接复制该密钥短串填入上方凭证输入框中，<strong>切勿</strong>携带任何 http:// 或 https:// 前缀。</p>
+                </div>
+            </details>
+
+            <details class="group border border-gray-200 rounded bg-white p-2 cursor-pointer transition-all">
+                <summary class="font-medium text-gray-700 select-none flex justify-between items-center outline-none">
+                    <span>🤖 2. 如何获取 钉钉群机器人 Webhook 地址？</span>
+                    <span class="text-gray-400 group-open:rotate-180 transition-transform">▼</span>
+                </summary>
+                <div class="mt-2 pl-2 border-l-2 border-blue-400 text-gray-500 space-y-1 bg-gray-50/50 p-2 rounded">
+                    <p>① 打开钉钉电脑端，进入您需要接收通知的<strong>钉钉群聊</strong>。</p>
+                    <p>② 点击右上角 <strong>「群设置」 -> 「智能群助手」 -> 「添加机器人」</strong>。</p>
+                    <p>③ 选择 <strong>「自定义 (Custom)」</strong> 机器人，点击添加。</p>
+                    <p>④ <strong>安全设置（必填）</strong>：必须勾选 <strong>「自定义关键词」</strong>，并添加关键词：<code class="bg-gray-200 px-1 rounded text-red-600 font-mono">金价</code>（否则机器人将拒绝投递消息）。</p>
+                    <p>⑤ 完成后，复制系统生成的完整 Webhook 地址（带有 <code>oapi.dingtalk.com</code> 域名）。</p>
+                    <p>⑥ <strong>填写规范</strong>：可直接将<strong>整个完整 URL 链接</strong>粘贴到上方，系统后端会自动智能识别清洗出 Token 部分。</p>
+                </div>
+            </details>
+
+            <details class="group border border-gray-200 rounded bg-white p-2 cursor-pointer transition-all">
+                <summary class="font-medium text-gray-700 select-none flex justify-between items-center outline-none">
+                    <span>🕊️ 3. 如何获取 飞书群机器人 Webhook 地址？</span>
+                    <span class="text-gray-400 group-open:rotate-180 transition-transform">▼</span>
+                </summary>
+                <div class="mt-2 pl-2 border-l-2 border-green-400 text-gray-500 space-y-1 bg-gray-50/50 p-2 rounded">
+                    <p>① 打开飞书客户端，进入需要接收通知的<strong>飞书群聊</strong>。</p>
+                    <p>② 点击右上角 <strong>「设置」 -> 「群机器人」 -> 「添加机器人」</strong>。</p>
+                    <p>③ 选择 <strong>「自定义机器人」</strong>，点击添加并为其设置一个您喜欢的名称。</p>
+                    <p>④ <strong>安全设置（可选）</strong>：如需添加安全校验，建议使用包含关键词校验。</p>
+                    <p>⑤ 完成后，复制系统生成的完整 Webhook 地址（带有 <code>open.feishu.cn</code> 域名）。</p>
+                    <p>⑥ <strong>填写规范</strong>：可直接将<strong>整个完整 URL 链接</strong>粘贴到上方，系统内置的清洗器会自动精准完成回显提取。</p>
+                </div>
+            </details>
+        </div>
+
+        <div class="mt-4 pt-4 border-t border-dashed border-gray-200 bg-gray-50/50 p-4 rounded-lg text-xs text-gray-400 space-y-1.5">
             <p class="font-semibold text-gray-500 text-center mb-1 text-sm">⚖️ 平台特别免责及风险提示声明</p>
             <p>1. <strong>非投资建议</strong>：本系统发送的所有黄金盘面价格、实时涨跌变动信息均源自第三方公开API清洗换算，仅供技术研究与资产监控交流参考，在任何情况下均<strong>不构成任何形式的投资建议或买卖依据</strong>。据此操作风险自担。</p>
             <p>2. <strong>消息延迟与漏报风险</strong>：鉴于国内外网络中转复杂性、上游网关限流、第三方推送服务波动等不可抗力因素，系统<strong>可能存在极端情况下的消息推送延迟、失败或漏报</strong>。用户不可完全依赖、强绑定本通知作为唯一的决策依据。</p>
@@ -74,8 +122,8 @@
     </div>
 
     <script>
-        // 自动对齐服务端口（改成外网接口地址）
-        const API_BASE = "http://localhost:5001"; 
+        // 自动对齐服务端口（如果在外面用，记得改成 frp 的外网地址）
+        const API_BASE = "http://8.148.27.215:51555"; 
         let ruleCounter = 0;
         let hasQueried = false; 
 
